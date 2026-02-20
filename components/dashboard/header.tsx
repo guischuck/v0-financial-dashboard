@@ -1,7 +1,9 @@
 "use client"
 
-import { Bell, Search, Settings, User } from "lucide-react"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Bell, Search, Settings, User, LogOut } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { useClerk, useUser } from "@clerk/nextjs"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
@@ -9,9 +11,19 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
 
 export function Header() {
+  const { user } = useUser()
+  const { signOut } = useClerk()
+  const router = useRouter()
+
+  const initials = [user?.firstName?.[0], user?.lastName?.[0]]
+    .filter(Boolean)
+    .join("")
+    .toUpperCase() || "U"
+
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-card px-6">
       {/* Search */}
@@ -19,7 +31,7 @@ export function Header() {
         <Search className="h-4 w-4" />
         <input
           type="text"
-          placeholder="Buscar lancamentos, contas..."
+          placeholder="Buscar lançamentos, contas..."
           className="w-64 bg-transparent outline-none placeholder:text-muted-foreground/60"
         />
       </div>
@@ -28,7 +40,7 @@ export function Header() {
       <div className="flex items-center gap-4">
         {/* Sync status */}
         <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-success" />
+          <div className="h-2 w-2 rounded-full bg-green-500" />
           <span className="text-xs text-muted-foreground">Pluggy sincronizado</span>
         </div>
 
@@ -45,23 +57,53 @@ export function Header() {
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-accent">
               <Avatar className="h-7 w-7">
-                <AvatarFallback className="bg-primary/10 text-xs text-primary">GS</AvatarFallback>
+                {user?.imageUrl && <AvatarImage src={user.imageUrl} alt={user.fullName ?? ""} />}
+                <AvatarFallback className="bg-primary/10 text-xs text-primary">
+                  {initials}
+                </AvatarFallback>
               </Avatar>
-              <span className="hidden text-sm font-medium text-foreground md:inline">Guilherme</span>
+              <span className="hidden text-sm font-medium text-foreground md:inline">
+                {user?.firstName ?? "Usuário"}
+              </span>
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem>
-              <User className="mr-2 h-4 w-4" />
+
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex flex-col gap-0.5">
+                <p className="text-sm font-medium text-foreground">{user?.fullName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {user?.primaryEmailAddress?.emailAddress}
+                </p>
+              </div>
+            </DropdownMenuLabel>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem
+              className="cursor-pointer gap-2"
+              onClick={() => router.push("/perfil")}
+            >
+              <User className="h-4 w-4" />
               Meu Perfil
             </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Settings className="mr-2 h-4 w-4" />
-              Configuracoes
+
+            <DropdownMenuItem
+              className="cursor-pointer gap-2"
+              onClick={() => router.push("/configuracoes")}
+            >
+              <Settings className="h-4 w-4" />
+              Configurações
             </DropdownMenuItem>
+
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive">
-              Sair
+
+            <DropdownMenuItem
+              className="cursor-pointer gap-2 text-destructive focus:text-destructive"
+              onClick={() => signOut({ redirectUrl: "/login" })}
+            >
+              <LogOut className="h-4 w-4" />
+              Sair da conta
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

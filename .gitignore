@@ -7,4 +7,6 @@ __v0_jsx-dev-runtime.ts
 node_modules/
 .next/
 .env*.local
-.DS_Store
+.DS_Store.pnpm-store/
+.npmrc
+.pnpmfile.cjs
