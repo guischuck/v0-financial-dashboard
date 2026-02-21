@@ -7,7 +7,7 @@ import { useClerk, useUser } from "@clerk/nextjs"
 import {
   LayoutDashboard,
   ArrowLeftRight,
-  Receipt,
+  ArrowUpDown,
   Landmark,
   FileBarChart,
   Settings,
@@ -15,8 +15,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Building2,
-  Link2,
   LogOut,
+  Megaphone,
   User,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -24,11 +24,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
+  { icon: ArrowUpDown, label: "Transações", href: "/transacoes" },
   { icon: ArrowLeftRight, label: "Conciliação", href: "/conciliacao" },
-  { icon: Receipt, label: "Lançamentos", href: "/lancamentos" },
   { icon: Landmark, label: "Contas Bancárias", href: "/contas" },
-  { icon: Link2, label: "Pluggy", href: "/pluggy" },
   { icon: Building2, label: "Advbox", href: "/advbox" },
+  { icon: Megaphone, label: "Cobranças", href: "/cobrancas" },
   { icon: FileBarChart, label: "Relatórios", href: "/relatorios" },
 ]
 

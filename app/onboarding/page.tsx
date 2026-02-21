@@ -98,7 +98,7 @@ export default function OnboardingPage() {
                         <div className="space-y-2">
                             <Label htmlFor="slug">Identificador único</Label>
                             <div className="flex items-center rounded-md border border-border bg-muted/50 px-3">
-                                <span className="text-sm text-muted-foreground">finconcilia.com/</span>
+                                <span className="text-sm text-muted-foreground">honorariospay.cloud/</span>
                                 <Input
                                     id="slug"
                                     className="border-0 bg-transparent px-1 focus-visible:ring-0"

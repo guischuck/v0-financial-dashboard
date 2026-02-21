@@ -1,74 +1,103 @@
-import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { encrypt, decrypt, maskApiKey } from '@/lib/encryption'
+import { encrypt } from '@/lib/encryption'
+import { getAuthContext, unauthorized, cached, withCache, serverError } from '@/lib/api-helpers'
+import { cacheKeys, cacheTTL, invalidateCache } from '@/lib/redis'
 
-// GET /api/settings — retorna configurações com valores mascarados
+const ADVBOX_API_BASE = 'https://app.advbox.com.br/api/v1'
+
 export async function GET() {
     try {
-        const { userId } = await auth()
-        if (!userId) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+        const ctx = await getAuthContext()
+        if (!ctx) return unauthorized()
 
-        const tenantUser = await prisma.tenantUser.findFirst({
-            where: { clerkUserId: userId },
-            include: { tenant: { include: { settings: true } } },
+        const key = cacheKeys.settings(ctx.tenantId)
+        const { data, hit } = await withCache(key, cacheTTL.settings, async () => {
+            const tenantUser = await prisma.tenantUser.findFirst({
+                where: { clerkUserId: ctx.userId },
+                include: { tenant: { include: { settings: true } } },
+            })
+
+            const s = tenantUser?.tenant.settings
+
+            return {
+                pluggyClientIdConfigured: !!s?.pluggyClientIdEnc,
+                pluggyApiKeyConfigured: !!s?.pluggyApiKeyEnc,
+                advboxApiKeyConfigured: !!s?.advboxApiKeyEnc,
+                pluggyConnected: s?.pluggyConnected ?? false,
+                advboxConnected: s?.advboxConnected ?? false,
+                advboxLastSyncAt: s?.advboxLastSyncAt ?? null,
+                autoMarkPaid: s?.autoMarkPaid ?? false,
+                notifyReconciliation: s?.notifyReconciliation ?? true,
+                notifyDueTransactions: s?.notifyDueTransactions ?? true,
+                notifyMisc: s?.notifyMisc ?? true,
+                companyName: s?.companyName ?? '',
+                companyLogo: s?.companyLogo ?? '',
+                matchWeightCpf: s?.matchWeightCpf ?? 40,
+                matchWeightName: s?.matchWeightName ?? 25,
+                matchWeightEmail: s?.matchWeightEmail ?? 15,
+                matchWeightAmount: s?.matchWeightAmount ?? 20,
+                confidenceHigh: s?.confidenceHigh ?? 60,
+                confidenceMedium: s?.confidenceMedium ?? 35,
+            }
         })
 
-        if (!tenantUser) return NextResponse.json({ error: 'Tenant não encontrado' }, { status: 404 })
-
-        const s = tenantUser.tenant.settings
-
-        return NextResponse.json({
-            pluggyClientIdMasked: s?.pluggyClientIdEnc ? maskApiKey(decrypt(s.pluggyClientIdEnc)) : null,
-            pluggyApiKeyMasked: s?.pluggyApiKeyEnc ? maskApiKey(decrypt(s.pluggyApiKeyEnc)) : null,
-            advboxApiKeyMasked: s?.advboxApiKeyEnc ? maskApiKey(decrypt(s.advboxApiKeyEnc)) : null,
-            advboxApiUrl: s?.advboxApiUrl ?? 'https://api.advbox.com.br',
-            pluggyConnected: s?.pluggyConnected ?? false,
-            advboxConnected: s?.advboxConnected ?? false,
-        })
+        return cached(data, cacheTTL.settings, hit)
     } catch (error) {
         console.error('GET /api/settings error:', error)
-        return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+        return serverError()
     }
 }
 
-// POST /api/settings — salva/atualiza configurações criptografadas
 export async function POST(req: Request) {
     try {
-        const { userId } = await auth()
-        if (!userId) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+        const ctx = await getAuthContext()
+        if (!ctx) return unauthorized()
 
-        const tenantUser = await prisma.tenantUser.findFirst({
-            where: { clerkUserId: userId },
-        })
-
-        if (!tenantUser) return NextResponse.json({ error: 'Tenant não encontrado' }, { status: 404 })
-
-        // Only OWNER and ADMIN can change settings
-        if (!['OWNER', 'ADMIN'].includes(tenantUser.role)) {
+        if (!['OWNER', 'ADMIN'].includes(ctx.role)) {
             return NextResponse.json({ error: 'Sem permissão para alterar configurações' }, { status: 403 })
         }
 
         const body = await req.json()
-        const { pluggyApiKey, pluggyClientId, advboxApiKey, advboxApiUrl } = body
+        const {
+            pluggyApiKey, pluggyClientId, advboxApiKey,
+            autoMarkPaid, notifyReconciliation, notifyDueTransactions, notifyMisc,
+            companyName, companyLogo,
+            matchWeightCpf, matchWeightName, matchWeightEmail, matchWeightAmount,
+            confidenceHigh, confidenceMedium,
+        } = body
 
-        const updateData: Record<string, unknown> = {}
+        const updateData: Record<string, unknown> = {
+            advboxApiUrl: ADVBOX_API_BASE,
+        }
 
         if (pluggyApiKey) updateData.pluggyApiKeyEnc = encrypt(pluggyApiKey)
         if (pluggyClientId) updateData.pluggyClientIdEnc = encrypt(pluggyClientId)
         if (advboxApiKey) updateData.advboxApiKeyEnc = encrypt(advboxApiKey)
-        if (advboxApiUrl) updateData.advboxApiUrl = advboxApiUrl
+        if (typeof autoMarkPaid === 'boolean') updateData.autoMarkPaid = autoMarkPaid
+        if (typeof notifyReconciliation === 'boolean') updateData.notifyReconciliation = notifyReconciliation
+        if (typeof notifyDueTransactions === 'boolean') updateData.notifyDueTransactions = notifyDueTransactions
+        if (typeof notifyMisc === 'boolean') updateData.notifyMisc = notifyMisc
+        if (typeof companyName === 'string') updateData.companyName = companyName
+        if (typeof companyLogo === 'string') updateData.companyLogo = companyLogo
+        if (companyLogo === null) updateData.companyLogo = null
+        if (typeof matchWeightCpf === 'number') updateData.matchWeightCpf = matchWeightCpf
+        if (typeof matchWeightName === 'number') updateData.matchWeightName = matchWeightName
+        if (typeof matchWeightEmail === 'number') updateData.matchWeightEmail = matchWeightEmail
+        if (typeof matchWeightAmount === 'number') updateData.matchWeightAmount = matchWeightAmount
+        if (typeof confidenceHigh === 'number') updateData.confidenceHigh = confidenceHigh
+        if (typeof confidenceMedium === 'number') updateData.confidenceMedium = confidenceMedium
 
         await prisma.tenantSettings.upsert({
-            where: { tenantId: tenantUser.tenantId },
-            create: { tenantId: tenantUser.tenantId, ...updateData },
+            where: { tenantId: ctx.tenantId },
+            create: { tenantId: ctx.tenantId, ...updateData },
             update: updateData,
         })
 
         await prisma.auditLog.create({
             data: {
-                tenantId: tenantUser.tenantId,
-                userId,
+                tenantId: ctx.tenantId,
+                userId: ctx.userId,
                 action: 'settings.updated',
                 metadata: {
                     fields: Object.keys(updateData).map(k => k.replace('Enc', '')),
@@ -76,9 +105,11 @@ export async function POST(req: Request) {
             },
         })
 
+        await invalidateCache(cacheKeys.settings(ctx.tenantId))
+
         return NextResponse.json({ success: true })
     } catch (error) {
         console.error('POST /api/settings error:', error)
-        return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+        return serverError()
     }
 }

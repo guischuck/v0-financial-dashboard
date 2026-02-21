@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter, JetBrains_Mono } from 'next/font/google'
-import { Analytics } from '@vercel/analytics/next'
 import { ClerkProvider } from '@clerk/nextjs'
 import { ptBR } from '@clerk/localizations'
+import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
@@ -42,7 +42,7 @@ export default function RootLayout({
       <html lang="pt-BR">
         <body className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
           {children}
-          <Analytics />
+          <Toaster richColors closeButton />
         </body>
       </html>
     </ClerkProvider>

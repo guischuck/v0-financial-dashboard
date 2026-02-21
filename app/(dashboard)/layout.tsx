@@ -1,5 +1,9 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
+import { prisma } from '@/lib/prisma'
+import { SharedDataProvider } from '@/lib/use-shared-data'
+import { AppSidebar } from '@/components/dashboard/app-sidebar'
+import { Header } from '@/components/dashboard/header'
 
 export default async function DashboardLayout({
     children,
@@ -9,14 +13,20 @@ export default async function DashboardLayout({
     const { userId } = await auth()
     if (!userId) redirect('/login')
 
-    // NOTE: Tenant check via Prisma is skipped until DATABASE_URL is configured.
-    // Once the database is set up, uncomment the block below:
-    //
-    // const { prisma } = await import('@/lib/prisma')
-    // const tenantUser = await prisma.tenantUser.findFirst({
-    //   where: { clerkUserId: userId },
-    // })
-    // if (!tenantUser) redirect('/onboarding')
+    const tenantUser = await prisma.tenantUser.findFirst({
+        where: { clerkUserId: userId },
+    })
+    if (!tenantUser) redirect('/onboarding')
 
-    return <>{children}</>
+    return (
+        <SharedDataProvider>
+            <div className="flex min-h-screen bg-background">
+                <AppSidebar />
+                <div className="flex-1 pl-16">
+                    <Header />
+                    {children}
+                </div>
+            </div>
+        </SharedDataProvider>
+    )
 }

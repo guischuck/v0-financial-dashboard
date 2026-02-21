@@ -12,8 +12,6 @@ import {
     CheckCircle2,
     Settings,
 } from 'lucide-react'
-import { AppSidebar } from '@/components/dashboard/app-sidebar'
-import { Header } from '@/components/dashboard/header'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -39,13 +37,7 @@ export default function PerfilPage() {
         : '—'
 
     return (
-        <div className="flex min-h-screen bg-background">
-            <AppSidebar />
-
-            <div className="flex-1 pl-16">
-                <Header />
-
-                <main className="mx-auto max-w-2xl p-6">
+        <main className="mx-auto max-w-2xl p-6">
                     {/* Page title */}
                     <div className="mb-6 flex items-center gap-3">
                         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
@@ -144,9 +136,7 @@ export default function PerfilPage() {
                         </a>
                         . Suas credenciais nunca são armazenadas diretamente.
                     </p>
-                </main>
-            </div>
-        </div>
+        </main>
     )
 }
 

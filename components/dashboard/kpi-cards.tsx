@@ -1,7 +1,10 @@
 "use client"
 
-import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, CheckCircle2, AlertTriangle, ChevronDown } from "lucide-react"
+import { useMemo } from "react"
+import { ArrowUpRight, ArrowDownRight, ChevronDown, Loader2 } from "lucide-react"
 import { Card } from "@/components/ui/card"
+import { useAccounts } from "@/lib/hooks/use-accounts"
+import { useTransactions } from "@/lib/hooks/use-transactions"
 
 interface KpiCardProps {
   title: string
@@ -12,9 +15,10 @@ interface KpiCardProps {
     direction: "up" | "down"
   }
   variant?: "default" | "success" | "danger" | "warning"
+  loading?: boolean
 }
 
-function KpiCard({ title, value, subtitle, trend, variant = "default" }: KpiCardProps) {
+function KpiCard({ title, value, subtitle, trend, variant = "default", loading }: KpiCardProps) {
   const colorMap = {
     default: "text-foreground",
     success: "text-success",
@@ -36,99 +40,102 @@ function KpiCard({ title, value, subtitle, trend, variant = "default" }: KpiCard
         <ChevronDown className="h-4 w-4 text-muted-foreground/50" />
       </div>
       <div className="flex items-baseline gap-2">
-        <span className={`text-2xl font-bold tracking-tight ${colorMap[variant]}`}>
-          {value}
-        </span>
-        {trend && (
-          <span className={`flex items-center gap-0.5 text-xs font-medium ${trendColorMap[trend.direction]}`}>
-            {trend.direction === "up" ? (
-              <ArrowUpRight className="h-3 w-3" />
-            ) : (
-              <ArrowDownRight className="h-3 w-3" />
+        {loading ? (
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        ) : (
+          <>
+            <span className={`text-2xl font-bold tracking-tight ${colorMap[variant]}`}>
+              {value}
+            </span>
+            {trend && (
+              <span className={`flex items-center gap-0.5 text-xs font-medium ${trendColorMap[trend.direction]}`}>
+                {trend.direction === "up" ? (
+                  <ArrowUpRight className="h-3 w-3" />
+                ) : (
+                  <ArrowDownRight className="h-3 w-3" />
+                )}
+                {trend.value}
+              </span>
             )}
-            {trend.value}
-          </span>
+          </>
         )}
       </div>
-      {subtitle && (
+      {subtitle && !loading && (
         <span className="text-xs text-muted-foreground">{subtitle}</span>
       )}
     </Card>
   )
 }
 
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+  }).format(value)
+}
+
 export function KpiCards() {
+  const { data: accounts, isLoading: accountsLoading } = useAccounts()
+
+  const now = new Date()
+  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString()
+
+  const { data: txData, isLoading: txLoading } = useTransactions({ from, to, pageSize: 500 })
+
+  const loading = accountsLoading || txLoading
+
+  const saldo = useMemo(() => {
+    if (!accounts) return null
+    return accounts.reduce((acc: number, a: { balance?: number }) => acc + (Number(a.balance) || 0), 0)
+  }, [accounts])
+
+  const { receitaMes, despesaMes, totalLancamentos } = useMemo(() => {
+    const list = txData?.transactions ?? []
+    let receita = 0
+    let despesa = 0
+    for (const t of list) {
+      const amt = Number(t.amount)
+      if (amt > 0) receita += amt
+      else despesa += Math.abs(amt)
+    }
+    return { receitaMes: receita, despesaMes: despesa, totalLancamentos: list.length }
+  }, [txData])
+
+  const conciliados = 0
+  const percentConciliado = totalLancamentos > 0 ? Math.round((conciliados / totalLancamentos) * 100) : 0
+
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <KpiCard
         title="Saldo"
-        value="R$ 70.112,00"
-        trend={{ value: "732%", direction: "up" }}
-        subtitle="vs mes anterior: R$ 8.422,00"
+        value={saldo !== null ? formatCurrency(saldo) : "—"}
+        subtitle={saldo !== null ? "Soma das contas Pluggy" : "Conecte contas na Pluggy"}
         variant="default"
+        loading={loading}
       />
       <KpiCard
-        title="Receita mensal prevista"
-        value="R$ 200.674,14"
-        subtitle="vs realizada: R$ 61.690,00"
+        title="Receita do mês"
+        value={formatCurrency(receitaMes)}
+        subtitle="Créditos no período (Pluggy)"
         variant="default"
+        loading={loading}
       />
       <KpiCard
-        title="Despesa mensal prevista"
-        value="R$ -190,00"
-        subtitle="vs realizada: R$ -0,00"
+        title="Despesa do mês"
+        value={formatCurrency(despesaMes)}
+        subtitle="Débitos no período (Pluggy)"
         variant="danger"
+        loading={loading}
       />
       <KpiCard
         title="Conciliados"
-        value="87%"
-        trend={{ value: "12%", direction: "up" }}
-        subtitle="142 de 163 lancamentos"
+        value={totalLancamentos === 0 ? "—" : `${percentConciliado}%`}
+        subtitle={totalLancamentos > 0 ? `${conciliados} de ${totalLancamentos} lançamentos` : "Nenhum lançamento no mês"}
         variant="success"
+        loading={loading}
       />
-    </div>
-  )
-}
-
-export function ReconciliationKpi() {
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <Card className="flex items-center gap-3 p-4 shadow-sm border-border/60">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success/10">
-          <CheckCircle2 className="h-5 w-5 text-success" />
-        </div>
-        <div>
-          <p className="text-2xl font-bold text-foreground">142</p>
-          <p className="text-xs text-muted-foreground">Conciliados</p>
-        </div>
-      </Card>
-      <Card className="flex items-center gap-3 p-4 shadow-sm border-border/60">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-warning/10">
-          <AlertTriangle className="h-5 w-5 text-warning" />
-        </div>
-        <div>
-          <p className="text-2xl font-bold text-foreground">15</p>
-          <p className="text-xs text-muted-foreground">Pendentes</p>
-        </div>
-      </Card>
-      <Card className="flex items-center gap-3 p-4 shadow-sm border-border/60">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-destructive/10">
-          <TrendingDown className="h-5 w-5 text-destructive" />
-        </div>
-        <div>
-          <p className="text-2xl font-bold text-foreground">6</p>
-          <p className="text-xs text-muted-foreground">Divergentes</p>
-        </div>
-      </Card>
-      <Card className="flex items-center gap-3 p-4 shadow-sm border-border/60">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-          <TrendingUp className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <p className="text-2xl font-bold text-foreground">R$ 1.247,50</p>
-          <p className="text-xs text-muted-foreground">Diferenca total</p>
-        </div>
-      </Card>
     </div>
   )
 }

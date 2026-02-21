@@ -17,10 +17,12 @@ model Tenant {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  settings TenantSettings?
-  users    TenantUser[]
-  auditLogs AuditLog[]
-  pluggyItems PluggyItem[]
+  settings       TenantSettings?
+  users          TenantUser[]
+  auditLogs      AuditLog[]
+  pluggyItems    PluggyItem[]
+  notifications  Notification[]
+  pluggyWebhooks PluggyWebhook[]
 
   @@map("tenants")
 }
@@ -32,10 +34,27 @@ model TenantSettings {
   pluggyClientIdEnc  String? @map("pluggy_client_id_enc")
   advboxApiKeyEnc    String? @map("advbox_api_key_enc")
   advboxApiUrl       String? @map("advbox_api_url")
+  pluggyWebhookUrl   String? @map("pluggy_webhook_url")
   pluggyConnected    Boolean @default(false) @map("pluggy_connected")
   advboxConnected    Boolean @default(false) @map("advbox_connected")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  advboxLastSyncAt        DateTime? @map("advbox_last_sync_at")
+  autoMarkPaid            Boolean   @default(false) @map("auto_mark_paid")
+  notifyReconciliation    Boolean   @default(true)  @map("notify_reconciliation")
+  notifyDueTransactions   Boolean   @default(true)  @map("notify_due_transactions")
+  notifyMisc              Boolean   @default(true)  @map("notify_misc")
+
+  companyName             String?                     @map("company_name")
+  companyLogo             String?                     @map("company_logo")
+
+  matchWeightCpf          Int       @default(40)    @map("match_weight_cpf")
+  matchWeightName         Int       @default(25)    @map("match_weight_name")
+  matchWeightEmail        Int       @default(15)    @map("match_weight_email")
+  matchWeightAmount       Int       @default(20)    @map("match_weight_amount")
+  confidenceHigh          Int       @default(60)    @map("confidence_high")
+  confidenceMedium        Int       @default(35)    @map("confidence_medium")
+
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt      @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -61,31 +80,171 @@ model TenantUser {
 }
 
 model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  userId     String?  @map("user_id")
+  userName   String?  @map("user_name")
+  action     String
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([entityType, entityId])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
+
+model PluggyItem {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  itemId        String   @unique @map("item_id")
+  connectorId   Int?     @map("connector_id")
+  connectorName String?  @map("connector_name")
+  connectorLogo String?  @map("connector_logo")
+  status        String
+  lastSyncAt    DateTime? @map("last_sync_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accounts PluggyAccount[]
+
+  @@index([tenantId])
+  @@map("pluggy_items")
+}
+
+model PluggyAccount {
+  id              String   @id @default(cuid())
+  pluggyItemDbId  String   @map("pluggy_item_db_id")
+  tenantId        String   @map("tenant_id")
+  accountId       String   @unique @map("account_id")
+  name            String
+  customName      String?  @map("custom_name")
+  type            String
+  subtype         String?
+  number          String?
+  balance         Float    @default(0)
+  currencyCode    String   @default("BRL") @map("currency_code")
+  bankData        Json?    @map("bank_data")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  pluggyItem   PluggyItem         @relation(fields: [pluggyItemDbId], references: [id], onDelete: Cascade)
+  transactions PluggyTransaction[]
+
+  @@index([tenantId])
+  @@index([pluggyItemDbId])
+  @@map("pluggy_accounts")
+}
+
+model PluggyTransaction {
+  id                String   @id @default(cuid())
+  pluggyAccountDbId String   @map("pluggy_account_db_id")
+  tenantId          String   @map("tenant_id")
+  transactionId     String   @unique @map("transaction_id")
+  description       String
+  descriptionRaw    String?  @map("description_raw")
+  amount            Float
+  type              String
+  category          String?
+  categoryId        String?  @map("category_id")
+  date              DateTime
+  balance           Float?
+  currencyCode      String   @default("BRL") @map("currency_code")
+  status            String?
+  merchant          Json?
+  creditCardMetadata Json?   @map("credit_card_metadata")
+  paymentData       Json?    @map("payment_data")
+  ignored           Boolean  @default(false)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  pluggyAccount        PluggyAccount         @relation(fields: [pluggyAccountDbId], references: [id], onDelete: Cascade)
+  reconciliationRecord ReconciliationRecord?
+
+  @@index([tenantId])
+  @@index([pluggyAccountDbId])
+  @@index([date])
+  @@index([tenantId, date(sort: Desc), type])
+  @@index([tenantId, pluggyAccountDbId, date(sort: Desc)])
+  @@map("pluggy_transactions")
+}
+
+model PluggyWebhook {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  webhookId   String    @unique @map("webhook_id")
+  event       String
+  url         String
+  disabledAt  DateTime? @map("disabled_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("pluggy_webhooks")
+}
+
+model ClientMapping {
+  id                           String   @id @default(cuid())
+  tenantId                     String   @map("tenant_id")
+  payerCpf                     String   @map("payer_cpf")
+  advboxCustomerId             Int      @map("advbox_customer_id")
+  advboxCustomerName           String?  @map("advbox_customer_name")
+  advboxCustomerIdentification String?  @map("advbox_customer_identification")
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, payerCpf])
+  @@index([tenantId])
+  @@map("client_mappings")
+}
+
+model ReconciliationRecord {
+  id                    String    @id @default(cuid())
+  tenantId              String    @map("tenant_id")
+  pluggyTransactionDbId String    @unique @map("pluggy_transaction_db_id")
+  advboxTransactionId   Int       @map("advbox_transaction_id")
+  advboxCustomerId      Int?      @map("advbox_customer_id")
+  matchScore            Int       @default(0) @map("match_score")
+  status                String    @default("confirmed")
+  paidAt                DateTime? @map("paid_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  pluggyTransaction PluggyTransaction @relation(fields: [pluggyTransactionDbId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("reconciliation_records")
+}
+
+model Notification {
   id        String   @id @default(cuid())
   tenantId  String   @map("tenant_id")
-  userId    String?  @map("user_id")
-  action    String
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean  @default(false)
   metadata  Json?
   createdAt DateTime @default(now()) @map("created_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@map("audit_logs")
+  @@index([tenantId, read])
+  @@index([tenantId, createdAt])
+  @@map("notifications")
 }
 
-model PluggyItem {
-  id          String   @id @default(cuid())
-  tenantId    String   @map("tenant_id")
-  itemId      String   @unique @map("item_id")
-  connectorId Int?     @map("connector_id")
-  status      String
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId])
-  @@map("pluggy_items")
+enum NotificationType {
+  RECONCILIATION
+  DUE_TRANSACTION
+  MISC
 }
 
 enum Plan {
@@ -100,3 +259,4 @@ enum Role {
   MEMBER
   VIEWER
 }
+

@@ -18,26 +18,34 @@ export async function POST() {
         }
 
         const apiKey = decrypt(tenantUser.tenant.settings.advboxApiKeyEnc)
-        const baseUrl = tenantUser.tenant.settings.advboxApiUrl ?? 'https://api.advbox.com.br'
+        const baseUrl = tenantUser.tenant.settings.advboxApiUrl ?? 'https://app.advbox.com.br/api/v1'
 
-        // Test connection to Advbox API
-        const res = await fetch(`${baseUrl}/v1/ping`, {
+        const res = await fetch(`${baseUrl}/settings`, {
             headers: {
                 Authorization: `Bearer ${apiKey}`,
+                Accept: 'application/json',
                 'Content-Type': 'application/json',
+                'User-Agent': 'HonorariosPay/1.0',
             },
         })
 
         const connected = res.ok
 
-        // Update connection status
         await prisma.tenantSettings.update({
             where: { tenantId: tenantUser.tenantId },
-            data: { advboxConnected: connected },
+            data: {
+                advboxConnected: connected,
+                ...(connected ? { advboxLastSyncAt: new Date() } : {}),
+            },
         })
 
         if (!connected) {
-            return NextResponse.json({ error: 'Falha na autenticação com Advbox' }, { status: 400 })
+            const errorBody = await res.text().catch(() => '')
+            console.error('AdvBox test failed:', res.status, errorBody)
+            return NextResponse.json(
+                { error: `Falha na autenticação com Advbox (HTTP ${res.status})` },
+                { status: 400 }
+            )
         }
 
         return NextResponse.json({ success: true, message: 'Advbox conectado com sucesso' })

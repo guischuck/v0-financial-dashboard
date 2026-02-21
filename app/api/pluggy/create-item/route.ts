@@ -30,30 +30,30 @@ export async function POST(req: Request) {
         const clientSecret = decrypt(settings.pluggyApiKeyEnc)
         const client = new PluggyClient({ clientId, clientSecret })
 
-        // Validate if item exists via API
         const item = await client.fetchItem(itemId)
 
-        // Check if the item is already registered for this tenant
         const existing = await prisma.pluggyItem.findUnique({
             where: { itemId },
         })
 
         if (!existing) {
-            // Save item
             await prisma.pluggyItem.create({
                 data: {
                     itemId,
                     tenantId,
-                    connectorId: item.connectorId,
+                    connectorId: item.connector.id,
+                    connectorName: item.connector.name,
+                    connectorLogo: item.connector.imageUrl || null,
                     status: item.status,
                 },
             })
         } else {
-            // Update item
             await prisma.pluggyItem.update({
                 where: { itemId },
                 data: {
-                    connectorId: item.connectorId,
+                    connectorId: item.connector.id,
+                    connectorName: item.connector.name,
+                    connectorLogo: item.connector.imageUrl || null,
                     status: item.status,
                 },
             })

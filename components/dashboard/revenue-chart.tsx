@@ -1,7 +1,8 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
-import { RefreshCw } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import {
   BarChart,
   Bar,
@@ -10,16 +11,9 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from "recharts"
 
-const data = [
-  { month: "Fev", receita: 200174.14, despesa: 190.0 },
-  { month: "Mar", receita: 2339.91, despesa: 20175.0 },
-  { month: "Abr", receita: 0.01, despesa: 0.0 },
-  { month: "Mai", receita: 0.01, despesa: 0.0 },
-  { month: "Jun", receita: 0.01, despesa: 0.0 },
-]
+const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -54,6 +48,65 @@ function CustomTooltip({
 }
 
 export function RevenueChart() {
+  const [data, setData] = useState<{ month: string; receita: number; despesa: number }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchChartData() {
+      setLoading(true)
+      try {
+        const now = new Date()
+        const globalFrom = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+        const globalTo = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+
+        const res = await fetch(
+          `/api/pluggy/transactions?from=${globalFrom.toISOString()}&to=${globalTo.toISOString()}&pageSize=2000`
+        )
+        if (cancelled) return
+
+        const { transactions = [] } = res.ok ? await res.json() : { transactions: [] }
+
+        const buckets: Record<string, { receita: number; despesa: number }> = {}
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+          const key = `${d.getFullYear()}-${d.getMonth()}`
+          buckets[key] = { receita: 0, despesa: 0 }
+        }
+
+        for (const t of transactions as { amount: number; date: string }[]) {
+          const d = new Date(t.date)
+          const key = `${d.getFullYear()}-${d.getMonth()}`
+          if (buckets[key]) {
+            const amt = Number(t.amount)
+            if (amt > 0) buckets[key].receita += amt
+            else buckets[key].despesa += Math.abs(amt)
+          }
+        }
+
+        const chartData: { month: string; receita: number; despesa: number }[] = []
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+          const key = `${d.getFullYear()}-${d.getMonth()}`
+          chartData.push({
+            month: monthNames[d.getMonth()],
+            ...buckets[key],
+          })
+        }
+
+        setData(chartData)
+      } catch {
+        if (!cancelled) setData([])
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    fetchChartData()
+    return () => { cancelled = true }
+  }, [])
+
   return (
     <Card className="p-5 shadow-sm border-border/60">
       <div className="mb-4 flex items-center justify-between">
@@ -61,11 +114,8 @@ export function RevenueChart() {
           <h3 className="text-sm font-semibold text-foreground">
             Receitas x Despesas
           </h3>
-          <p className="text-xs text-muted-foreground">com base no vencimento</p>
+          <p className="text-xs text-muted-foreground">com base no vencimento (Pluggy)</p>
         </div>
-        <button className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
-          <RefreshCw className="h-4 w-4" />
-        </button>
       </div>
 
       <div className="mb-3 flex items-center gap-4">
@@ -79,30 +129,40 @@ export function RevenueChart() {
         </div>
       </div>
 
-      <ResponsiveContainer width="100%" height={260}>
-        <BarChart data={data} barGap={4} barSize={28}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-          <XAxis
-            dataKey="month"
-            axisLine={false}
-            tickLine={false}
-            tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
-          />
-          <YAxis
-            axisLine={false}
-            tickLine={false}
-            tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-            tickFormatter={(v) =>
-              v >= 1000
-                ? `R$ ${(v / 1000).toFixed(0)}k`
-                : `R$ ${v.toFixed(0)}`
-            }
-          />
-          <Tooltip content={<CustomTooltip />} />
-          <Bar dataKey="receita" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="despesa" fill="var(--chart-3)" radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+      {loading ? (
+        <div className="flex h-[260px] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : data.length === 0 ? (
+        <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
+          Nenhum dado no período. Sincronize transações na Pluggy.
+        </div>
+      ) : (
+        <ResponsiveContainer width="100%" height={260}>
+          <BarChart data={data} barGap={4} barSize={28}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+            <XAxis
+              dataKey="month"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+            />
+            <YAxis
+              axisLine={false}
+              tickLine={false}
+              tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+              tickFormatter={(v) =>
+                v >= 1000
+                  ? `R$ ${(v / 1000).toFixed(0)}k`
+                  : `R$ ${v.toFixed(0)}`
+              }
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Bar dataKey="receita" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="despesa" fill="var(--chart-3)" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      )}
     </Card>
   )
 }
